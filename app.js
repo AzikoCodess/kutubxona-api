@@ -16,7 +16,7 @@ const bookRoutes = require("./routes/book.route")
 const borrowRoutes = require("./routes/borrow.route")
 
 app.use("/auth", authRoutes)
-app.use("/book", bookRoutes)
+app.use("/books", bookRoutes)
 app.use("/borrow", borrowRoutes)
 
 const swaggerOptions = {

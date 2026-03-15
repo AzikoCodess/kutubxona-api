@@ -1,5 +1,5 @@
 const User = require("../models/User.model")
-const bcrypt = require("bcrypt")
+const bcrypt = require("bcryptjs")
 const jwt = require("jsonwebtoken")
 const UserDto = require("../dtos/user.dto")
 
@@ -28,8 +28,8 @@ const login = async (req, res) => {
             return res.status(404).json({ error: "Bunday foydalanuvchi topilmadi !" })
         }
         const userDto = new UserDto(user)
-        const token = jwt.sign({ id: userDto.id }, process.env.JWT_SECRET, { expiresIn: "1h" })
-        res.status(200).json(userDto, token)
+        const token = jwt.sign({ id: userDto.id, role: userDto.role }, process.env.JWT_SECRET, { expiresIn: "1h" })
+        res.status(200).json({ userDto, token })
     } catch (error) {
         res.status(500).json({ error: error.message })
     }
