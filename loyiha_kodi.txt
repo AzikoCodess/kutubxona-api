@@ -1,0 +1,769 @@
+
+
+==================================================
+FILE: .\.env
+==================================================
+
+PORT = 7000
+MONGO_URL = mongodb://localhost:27017/kutubxona-api
+JWT_SECRET = secretKey
+HOST=localhost
+BASE_URL=http://localhost:7000
+
+==================================================
+FILE: .\app.js
+==================================================
+
+require("dotenv").config()
+const express = require("express")
+const app = express()
+const mongoose = require("mongoose")
+const swaggerUi = require("swagger-ui-express")
+const swaggerJsdoc = require("swagger-jsdoc")
+
+app.use(express.json())
+
+mongoose.connect(process.env.MONGO_URL)
+    .then(() => console.log(`Connected to MongoDB ${process.env.MONGO_URL}`))
+    .catch((err) => console.log(err))
+
+const authRoutes = require("./routes/auth.route")
+const bookRoutes = require("./routes/book.route")
+const borrowRoutes = require("./routes/borrow.route")
+
+app.use("/auth", authRoutes)
+app.use("/books", bookRoutes)
+app.use("/borrow", borrowRoutes)
+
+const swaggerOptions = {
+    definition: {
+        openapi: "3.0.0",
+        info: {
+            title: "Kutubxona API",
+            version: "1.0.0",
+            description: "Kutubxona boshqaruv tizimi"
+        },
+        servers: [
+            { url: process.env.BASE_URL }
+        ],
+        components: {
+            securitySchemes: {
+                bearerAuth: {
+                    type: "http",
+                    scheme: "bearer",
+                    bearerFormat: "JWT"
+                }
+            }
+        }
+    },
+    apis: ["./routes/*.js"]
+};
+
+swaggerDocument = swaggerJsdoc(swaggerOptions);
+app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerDocument));
+
+app.listen(process.env.PORT, () => {
+    console.log(`Server is running ${process.env.BASE_URL}`)
+})
+
+==================================================
+FILE: .\package.json
+==================================================
+
+{
+  "name": "kutubxona-api",
+  "version": "1.0.0",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js",
+    "dev": "nodemon app.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "cors": "^2.8.6",
+    "dotenv": "^17.3.1",
+    "express": "^5.2.1",
+    "joi": "^18.0.2",
+    "jsonwebtoken": "^9.0.3",
+    "mongoose": "^9.2.4",
+    "swagger-jsdoc": "^6.2.8",
+    "swagger-ui-express": "^5.0.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.14"
+  }
+}
+
+==================================================
+FILE: .\controllers\auth.controller.js
+==================================================
+
+const User = require("../models/User.model")
+const bcrypt = require("bcryptjs")
+const jwt = require("jsonwebtoken")
+const UserDto = require("../dtos/user.dto")
+
+const register = async (req, res) => {
+    try {
+        const { login, password, } = req.body
+        const hashedPassword = await bcrypt.hash(password, 10)
+        const newUser = new User({ login, password: hashedPassword })
+        await newUser.save()
+        const userDto = new UserDto(newUser)
+        res.status(201).json({ message: "User created successfully", userDto })
+    } catch (error) {
+        res.status(500).json({ error: error.message })
+    }
+}
+
+const login = async (req, res) => {
+    try {
+        const { login, password } = req.body
+        const user = await User.findOne({ login })
+        if (!user) {
+            return res.status(404).json({ error: "Bunday foydalanuvchi topilmadi" })
+        }
+        const isPasswordValid = await bcrypt.compare(password, user.password)
+        if (!isPasswordValid) {
+            return res.status(404).json({ error: "Bunday foydalanuvchi topilmadi !" })
+        }
+        const userDto = new UserDto(user)
+        const token = jwt.sign({ id: userDto.id, role: userDto.role }, process.env.JWT_SECRET, { expiresIn: "1h" })
+        res.status(200).json({ userDto, token })
+    } catch (error) {
+        res.status(500).json({ error: error.message })
+    }
+}
+
+module.exports = { login, register }
+
+==================================================
+FILE: .\controllers\book.controller.js
+==================================================
+
+const Book = require("../models/Book.model")
+
+const createBook = async (req, res) => {
+    try {
+        if (req.user.role !== "admin") {
+            return res.status(404).json({ error: "Admin faqat kitob qo'shish imkoniyati mavjud" })
+        }
+        const { title, author, genre, quantity } = req.body
+        const newBook = new Book({ title, author, genre, quantity })
+        await newBook.save()
+        res.status(201).json({ message: "Kitob qo'shildi", newBook })
+    } catch (error) {
+        res.status(500).json({ error: error.message })
+    }
+}
+
+const getAllBooks = async (req, res) => {
+    try {
+        const books = await Book.find()
+        res.status(200).json(books)
+    } catch (error) {
+        res.status(500).json({ error: error.message })
+    }
+}
+
+const updateBook = async (req, res) => {
+    try {
+        if (req.user.role !== "admin") {
+            return res.status(404).json({ error: "Admin faqat kitob o'zgartirish imkoniyati mavjud" })
+        }
+        const book = await Book.findByIdAndUpdate(req.params.id, req.body, { new: true })
+        if (!book) {
+            return res.status(404).json({ error: "Kitob topilmadi" })
+        }
+        res.status(200).json(book)
+    } catch (error) {
+        res.status(500).json({ error: error.message })
+    }
+}
+
+const deleteBook = async (req, res) => {
+    try {
+        if (req.user.role !== "admin") {
+            return res.status(404).json({ error: "Admin faqat kitob o'chirish imkoniyati mavjud" })
+        }
+        const book = await Book.findByIdAndDelete(req.params.id)
+        if (!book) {
+            return res.status(404).json({ error: "Kitob topilmadi" })
+        }
+        res.status(200).json({ message: "Kitob o'chirildi" })
+    } catch (error) {
+        res.status(500).json({ error: error.message })
+    }
+}
+
+module.exports = { createBook, getAllBooks, updateBook, deleteBook }
+
+==================================================
+FILE: .\controllers\borrow.controller.js
+==================================================
+
+const Book = require("../models/Book.model")
+const Borrow = require("../models/Borrow.model")
+
+
+const borrowBook = async (req, res) => {
+    try {
+        const { bookId } = req.body
+        const book = await Book.findById(bookId)
+        if (!book) {
+            return res.status(404).json({ error: "Kitob topilmadi" })
+        }
+        if (book.quantity === 0) {
+            return res.status(400).json({ error: "Kitob qolmagan" })
+        }
+
+        const already = await Borrow.findOne({
+            book: bookId, user: req.user.id, status: "borrowed"
+        })
+        if (already) {
+            return res.status(400).json({ error: "Siz bu kitobni allaqachon olgansiz!!!" })
+        }
+        const borrow = new Borrow({
+            book: bookId,
+            user: req.user.id,
+            status: "borrowed"
+        })
+        await borrow.save()
+        book.quantity -= 1
+        await book.save()
+        res.status(200).json({ message: "Kitob olindi" })
+    } catch (error) {
+        res.status(500).json({ error: error.message })
+    }
+}
+
+
+const returnBook = async (req, res) => {
+    try {
+        const { id } = req.params
+        const borrow = await Borrow.findById(id)
+        if (!borrow) {
+            return res.status(400).json({ error: "Topilmadi" })
+        }
+        if (borrow.status === "returned") {
+            return res.status(400).json({ error: "Allaqachon qaytarilgan" })
+        }
+        borrow.status = "returned"
+        borrow.returnedAt = new Date()
+        await borrow.save()
+
+        const book = await Book.findById(borrow.book)
+        book.quantity += 1
+        await book.save()
+
+        res.status(200).json({ message: "Kitob qaytarildi" })
+    } catch (error) {
+        res.status(500).json({ error: error.message })
+    }
+}
+
+
+const myBooks = async (req, res) => {
+    try {
+        const books = await Borrow.find({ user: req.user.id, status: "borrowed" }).populate("book")
+        res.json(books)
+    } catch (error) {
+        res.status(500).json({ error: error.message })
+
+    }
+}
+
+const borrows = async (req, res) => {
+    try {
+        if(req.user.role !== "admin"){
+            return res.status(400).json({ error: "Siz bu amalni bajarish uchun yetarli rolga ega emansiz" })
+        }
+        const books = await Borrow.find().populate("book")
+        res.json(books)
+    } catch (error) {
+        res.status(500).json({ error: error.message })
+    }
+}
+
+module.exports = { borrowBook, returnBook, myBooks, borrows }
+
+==================================================
+FILE: .\dtos\user.dto.js
+==================================================
+
+module.exports = class UserDto {
+    login
+    id
+    role
+    isActivated
+
+    constructor(model) {
+        this.login = model.login
+        this.id = model._id
+        this.role = model.role
+        this.isActivated = model.isActivated
+    }
+}
+
+==================================================
+FILE: .\middleware\auth.middleware.js
+==================================================
+
+const jwt = require("jsonwebtoken");
+
+const authMiddleware = (req, res, next) => {
+    try {
+        const authHeader = req.headers.authorization;
+        const token = authHeader && authHeader.startsWith("Bearer ") ? authHeader.split(" ")[1] : authHeader;
+        if (!token) {
+            return res.status(401).json({ message: "Token topilmadi" });
+        }
+
+        const decodedToken = jwt.verify(token, process.env.JWT_SECRET);
+        req.user = decodedToken;
+        next();
+    } catch (error) {
+        res.status(500).json({ message: "Token noto'g'ri" });
+    }
+}
+
+module.exports = authMiddleware;
+
+
+==================================================
+FILE: .\models\Book.model.js
+==================================================
+
+//   - Book (title, author, genre, quantity)
+
+const mongoose = require("mongoose");
+
+const bookSchema = new mongoose.Schema({
+    title: {
+        type: String,
+        required: true,
+        minlength: 2
+    },
+    author: {
+        type: String,
+        required: true,
+        minlength: 2
+    },
+    genre: {
+        type: String,
+        required: true,
+        minlength: 2,
+        enum: ["badiiy", "ilmiy", "tarix", "biografiya", "texnologiya", "bolalar"]
+    },
+    quantity: {
+        type: Number,
+        required: true,
+        min: 0
+    }
+}, { timestamps: true })
+
+const Book = mongoose.model("Book", bookSchema)
+module.exports = Book
+
+==================================================
+FILE: .\models\Borrow.model.js
+==================================================
+
+//   - Borrow (user, book, borrowedAt, returnedAt, status)
+
+const mongoose = require("mongoose")
+
+const borrowSchema = new mongoose.Schema({
+
+    user: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+        required: true
+    },
+
+    book: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Book",
+        required: true
+    },
+
+    borrowedAt: {
+        type: Date,
+        default: Date.now
+    },
+
+    returnedAt: {
+        type: Date,
+        default: null
+    },
+
+    status: {
+        type: String,
+        enum: ["borrowed", "returned"],
+        default: "borrowed"
+    }
+
+}, { timestamps: true })
+
+const Borrow = mongoose.model("Borrow", borrowSchema)
+
+module.exports = Borrow
+
+==================================================
+FILE: .\models\User.model.js
+==================================================
+
+//   - User (name, email, password, role)
+
+const mongoose = require("mongoose");
+
+const userSchema = new mongoose.Schema({
+    login: {
+        type: String,
+        required: true
+    },
+    password: {
+        type: String,
+        required: true
+    },
+    role: {
+        type: String,
+        enum: ["user", "admin"],
+        default: "user"
+    }
+}, { timestamps: true });
+
+const User = mongoose.model("User", userSchema);
+module.exports = User;
+
+==================================================
+FILE: .\routes\auth.route.js
+==================================================
+
+const express = require("express");
+const router = express.Router();
+const authMiddleware = require("../middleware/auth.middleware");
+const { register, login } = require("../controllers/auth.controller");
+
+/**
+ * @swagger
+ * /auth/register:
+ *   post:
+ *     summary: Foydalanuvchi ro'yxatdan o'tadi
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               login:
+ *                 type: string
+ *                 example: admin
+ *               password:
+ *                 type: string
+ *                 example: 123456
+ *     responses:
+ *       201:
+ *         description: User yaratildi
+ *       500:
+ *         description: Server xatosi
+ */
+router.post("/register", register)
+
+/**
+ * @swagger
+ * /auth/login:
+ *   post:
+ *     summary: Tizimga kirish
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               login:
+ *                 type: string
+ *                 example: admin
+ *               password:
+ *                 type: string
+ *                 example: 123456
+ *     responses:
+ *       200:
+ *         description: Token qaytariladi
+ *       404:
+ *         description: User topilmadi
+ *       500:
+ *         description: Server xatosi
+ */
+router.post("/login", login)
+
+module.exports = router
+
+==================================================
+FILE: .\routes\book.route.js
+==================================================
+
+//   - /books → CRUD (admin), ko'rish (hammaga)
+
+const express = require("express");
+const router = express.Router();
+const { createBook, getAllBooks, updateBook, deleteBook } = require("../controllers/book.controller");
+const authMiddleware = require("../middleware/auth.middleware");
+
+/**
+ * @swagger
+ * /books/create:
+ *   post:
+ *     summary: Kitob qo'shish (admin)
+ *     tags: [Books]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               title:
+ *                 type: string
+ *               author:
+ *                 type: string
+ *               genre:
+ *                 type: string
+ *                 enum: [badiiy, ilmiy, tarix, biografiya, texnologiya, bolalar]
+ *               quantity:
+ *                 type: number
+ *     responses:
+ *       201:
+ *         description: Kitob qo'shildi
+ *       404:
+ *         description: Ruxsat yo'q
+ *       500:
+ *         description: Server xatosi
+ */
+router.post("/create", authMiddleware, createBook)
+
+/**
+ * @swagger
+ * /books/allBooks:
+ *   get:
+ *     summary: Barcha kitoblarni olish
+ *     tags: [Books]
+ *     responses:
+ *       200:
+ *         description: Kitoblar ro'yxati
+ *       500:
+ *         description: Server xatosi
+ */
+router.get("/allBooks", getAllBooks)
+
+/**
+ * @swagger
+ * /books/update/{id}:
+ *   put:
+ *     summary: Kitobni o'zgartirish (admin)
+ *     tags: [Books]
+ *     security:
+ *       - bearerAuth: []
+ *
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - title
+ *               - author
+ *               - genre
+ *               - quantity
+ *             properties:
+ *
+ *               title:
+ *                 type: string
+ *                 example: Alkimyogar
+ *
+ *               author:
+ *                 type: string
+ *                 example: Paulo Coelho
+ *
+ *               genre:
+ *                 type: string
+ *                 enum:
+ *                   - badiiy
+ *                   - ilmiy
+ *                   - tarix
+ *                   - biografiya
+ *                   - texnologiya
+ *                   - bolalar
+ *                 example: badiiy
+ *
+ *               quantity:
+ *                 type: number
+ *                 example: 5
+ *
+ *     responses:
+ *       200:
+ *         description: Kitob o'zgartirildi
+ *
+ *       404:
+ *         description: Kitob topilmadi
+ *
+ *       500:
+ *         description: Server xatosi
+ */
+router.put("/update/:id", authMiddleware, updateBook)
+
+/**
+ * @swagger
+ * /books/delete/{id}:
+ *   delete:
+ *     summary: Kitobni o'chirish (admin)
+ *     tags: [Books]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Kitob o'chirildi
+ *       404:
+ *         description: Kitob topilmadi
+ *       500:
+ *         description: Server xatosi
+ */
+router.delete("/delete/:id", authMiddleware, deleteBook)
+
+module.exports = router;
+
+==================================================
+FILE: .\routes\borrow.route.js
+==================================================
+
+//   - /borrow → kitob olish, qaytarish, o'z kitoblari
+
+const express = require("express")
+const router = express.Router()
+const { borrowBook, returnBook, myBooks, borrows } = require("../controllers/borrow.controller")
+const authMiddleware = require("../middleware/auth.middleware")
+
+/**
+ * @swagger
+ * /borrow/take:
+ *   post:
+ *     summary: Kitob olish
+ *     tags: [Borrow]
+ *     security:
+ *       - bearerAuth: []
+ *
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - bookId
+ *             properties:
+ *               bookId:
+ *                 type: string
+ *                 example: 69b82dc5ae76a9ec68a5eed4
+ *
+ *     responses:
+ *       200:
+ *         description: Kitob olindi
+ *
+ *       400:
+ *         description: Kitob qolmagan yoki oldin olingan
+ *
+ *       404:
+ *         description: Kitob topilmadi
+ *
+ *       500:
+ *         description: Server xatosi
+ */
+router.post("/take", authMiddleware, borrowBook)
+
+/**
+ * @swagger
+ * /borrow/return/{id}:
+ *   put:
+ *     summary: Kitob qaytarish
+ *     tags: [Borrow]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Borrow ID
+ *     responses:
+ *       200:
+ *         description: Kitob qaytarildi
+ *       400:
+ *         description: Allaqachon qaytarilgan yoki topilmadi
+ *       500:
+ *         description: Server xatosi
+ */
+router.put("/return/:id", authMiddleware, returnBook)
+
+/**
+ * @swagger
+ * /borrow/my:
+ *   get:
+ *     summary: Foydalanuvchining olgan kitoblari
+ *     tags: [Borrow]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Kitoblar ro'yxati
+ *       500:
+ *         description: Server xatosi
+ */
+router.get("/my", authMiddleware, myBooks)
+
+/**
+ * @swagger
+ * /borrow/all:
+ *   get:
+ *     summary: Barcha olingan kitoblarni ko'rish (admin)
+ *     tags: [Borrow]
+ *     security:
+ *       - bearerAuth: []
+ *
+ *     responses:
+ *       200:
+ *         description: Borrow list
+ *
+ *       400:
+ *         description: Ruxsat yo'q
+ *
+ *       500:
+ *         description: Server xatosi
+ */
+router.get("/all", authMiddleware, borrows)
+
+module.exports = router;

@@ -3,7 +3,7 @@ const Book = require("../models/Book.model")
 const createBook = async (req, res) => {
     try {
         if (req.user.role !== "admin") {
-            return res.status(404).json({ error: "Admin faqat kitob qo'shish imkoniyati mavjud" })
+            return res.status(403).json({ error: "Admin faqat kitob qo'shish imkoniyati mavjud" })
         }
         const { title, author, genre, quantity } = req.body
         const newBook = new Book({ title, author, genre, quantity })
@@ -26,7 +26,7 @@ const getAllBooks = async (req, res) => {
 const updateBook = async (req, res) => {
     try {
         if (req.user.role !== "admin") {
-            return res.status(404).json({ error: "Admin faqat kitob o'zgartirish imkoniyati mavjud" })
+            return res.status(403).json({ error: "Admin faqat kitob o'zgartirish imkoniyati mavjud" })
         }
         const book = await Book.findByIdAndUpdate(req.params.id, req.body, { new: true })
         if (!book) {
@@ -41,7 +41,7 @@ const updateBook = async (req, res) => {
 const deleteBook = async (req, res) => {
     try {
         if (req.user.role !== "admin") {
-            return res.status(404).json({ error: "Admin faqat kitob o'chirish imkoniyati mavjud" })
+            return res.status(403).json({ error: "Admin faqat kitob o'chirish imkoniyati mavjud" })
         }
         const book = await Book.findByIdAndDelete(req.params.id)
         if (!book) {

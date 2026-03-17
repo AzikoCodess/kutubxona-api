@@ -25,7 +25,7 @@ const login = async (req, res) => {
         }
         const isPasswordValid = await bcrypt.compare(password, user.password)
         if (!isPasswordValid) {
-            return res.status(404).json({ error: "Bunday foydalanuvchi topilmadi !" })
+            return res.status(401).json({ error: "Bunday foydalanuvchi topilmadi !" })
         }
         const userDto = new UserDto(user)
         const token = jwt.sign({ id: userDto.id, role: userDto.role }, process.env.JWT_SECRET, { expiresIn: "1h" })

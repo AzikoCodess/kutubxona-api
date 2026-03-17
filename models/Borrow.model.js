@@ -22,7 +22,8 @@ const borrowSchema = new mongoose.Schema({
     },
 
     returnedAt: {
-        type: Date
+        type: Date,
+        default: null
     },
 
     status: {
